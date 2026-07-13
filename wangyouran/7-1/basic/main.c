@@ -47,39 +47,36 @@ int main(void)
 
 	}
 }
-	
-	
-}
 
-void USART2_Init( u32 baudrate )
+void USART2_Init(u32 baudrate)
 {
-GPIO_InitTypeDef GPIO_InitStructure; //定义一个GPIO初始化用的结构体
-USART_InitTypeDef USART_InitStructure; //定义一个串口初始化用的结构体
+	GPIO_InitTypeDef GPIO_InitStructure; //定义一个GPIO初始化用的结构体
+	USART_InitTypeDef USART_InitStructure; //定义一个串口初始化用的结构体
 
-/*使能GPIOA和USART2时钟*/
-RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA,ENABLE); //GPIOA在AHB1高速总线上
-RCC_APB1PeriphClockCmd(RCC_APB1Periph_USART2,ENABLE); //USART2在APB1硬件总线上
+	/*使能GPIOA和USART2时钟*/
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA, ENABLE); //GPIOA在AHB1高速总线上
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_USART2, ENABLE); //USART2在APB1硬件总线上
 
-/*USART2 GPIO配置*/
-GPIO_InitStructure.GPIO_Pin = GPIO_Pin_2 | GPIO_Pin_3; //USART2的IO
-GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF; //复用模式
-GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;//速度50MHz
-GPIO_InitStructure.GPIO_OType = GPIO_OType_PP; //推挽复用输出
-GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP; //上拉电阻
-GPIO_Init(GPIOA,&GPIO_InitStructure);
+	/*USART2 GPIO配置*/
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_2 | GPIO_Pin_3; //USART2的IO
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF; //复用模式
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;//速度50MHz
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP; //推挽复用输出
+	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP; //上拉电阻
+	GPIO_Init(GPIOA, &GPIO_InitStructure);
 
-/*USART2 对应引脚复用映射*/
-GPIO_PinAFConfig(GPIOA,GPIO_PinSource2,GPIO_AF_USART2); //映射PA2到USART2上使用
-GPIO_PinAFConfig(GPIOA,GPIO_PinSource3,GPIO_AF_USART2); //映射PA3到USART2上使用
+	/*USART2 对应引脚复用映射*/
+	GPIO_PinAFConfig(GPIOA, GPIO_PinSource2, GPIO_AF_USART2); //映射PA2到USART2上使用
+	GPIO_PinAFConfig(GPIOA, GPIO_PinSource3, GPIO_AF_USART2); //映射PA3到USART2上使用
 
-/*USART2 端口配置*/
-USART_InitStructure.USART_BaudRate = baudrate; //波特率设置
-USART_InitStructure.USART_WordLength = USART_WordLength_8b; //字长8bit
-USART_InitStructure.USART_StopBits = USART_StopBits_1; //1停止位
-USART_InitStructure.USART_Parity = USART_Parity_No; //无校验
-USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;//无硬件数据流控制
-USART_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx; //收发
-USART_Init(USART2, &USART_InitStructure); //使用上面的参数初始化USART2
+	/*USART2 端口配置*/
+	USART_InitStructure.USART_BaudRate = baudrate; //波特率设置
+	USART_InitStructure.USART_WordLength = USART_WordLength_8b; //字长8bit
+	USART_InitStructure.USART_StopBits = USART_StopBits_1; //1停止位
+	USART_InitStructure.USART_Parity = USART_Parity_No; //无校验
+	USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;//无硬件数据流控制
+	USART_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx; //收发
+	USART_Init(USART2, &USART_InitStructure); //使用上面的参数初始化USART2
 
-USART_Cmd(USART2, ENABLE); //使能串口2
+	USART_Cmd(USART2, ENABLE); //使能串口2
 }
