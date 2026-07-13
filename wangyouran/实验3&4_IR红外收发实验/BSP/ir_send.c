@@ -8,7 +8,7 @@ void IR_Send_PWM_Init(void);
 static void IR_Send_Byte(uint8_t data);
 
 
-/* DWT¾«È·Î¢ÃëÑÓÊ±£¬ÀûÓÃCortex-M4ÄÚºËµÄÖÜÆÚ¼ÆÊıÆ÷ */
+/* DWTç²¾ç¡®å¾®ç§’å»¶æ—¶ï¼Œåˆ©ç”¨Cortex-M4å†…æ ¸çš„å‘¨æœŸè®¡æ•°å™¨ */
 static void DWT_Init(void)
 {
 	if(!(CoreDebug->DEMCR & CoreDebug_DEMCR_TRCENA_Msk))
@@ -29,95 +29,105 @@ static void systick_delay_us(uint32_t nus)
 #define IR_SEND_DELAY_US(x) systick_delay_us(x)
 
 
-void IR_Send_Init(void){
-DWT_Init();            //³õÊ¼»¯DWTÖÜÆÚ¼ÆÊıÆ÷ÓÃÓÚ¾«È·ÑÓÊ±
-IR_Send_GPIO_Init();
-IR_Send_PWM_Init();
+void IR_Send_Init(void)
+{
+	DWT_Init();              // åˆå§‹åŒ–DWTå‘¨æœŸè®¡æ•°å™¨ç”¨äºç²¾ç¡®å»¶æ—¶
+	IR_Send_GPIO_Init();
+	IR_Send_PWM_Init();
 }
 
 
-void IR_Send_GPIO_Init(void){
-GPIO_InitTypeDef GPIO_InitStruct;
-RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB, ENABLE);
+void IR_Send_GPIO_Init(void)
+{
+	GPIO_InitTypeDef GPIO_InitStruct;
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB, ENABLE);
 
-//PB8£¬TIM10£¬Chanel 1
-GPIO_InitStruct.GPIO_Pin = GPIO_Pin_8;
-GPIO_InitStruct.GPIO_Mode = GPIO_Mode_AF;
-GPIO_InitStruct.GPIO_Speed = GPIO_Speed_100MHz;
-GPIO_InitStruct.GPIO_OType = GPIO_OType_PP;
-GPIO_InitStruct.GPIO_PuPd = GPIO_PuPd_NOPULL ;
-GPIO_Init(GPIOB, &GPIO_InitStruct);
+	// PB8ï¼ŒTIM10ï¼ŒChannel 1
+	GPIO_InitStruct.GPIO_Pin   = GPIO_Pin_8;
+	GPIO_InitStruct.GPIO_Mode  = GPIO_Mode_AF;
+	GPIO_InitStruct.GPIO_Speed = GPIO_Speed_100MHz;
+	GPIO_InitStruct.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStruct.GPIO_PuPd  = GPIO_PuPd_NOPULL;
+	GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-GPIO_PinAFConfig(GPIOB, GPIO_PinSource8, GPIO_AF_TIM10);
+	GPIO_PinAFConfig(GPIOB, GPIO_PinSource8, GPIO_AF_TIM10);
 }
 
-void IR_Send_PWM_Init(void){
-TIM_TimeBaseInitTypeDef TIM_TimeBaseStruct;
-TIM_OCInitTypeDef TIM_OCInitStruct;
+void IR_Send_PWM_Init(void)
+{
+	TIM_TimeBaseInitTypeDef TIM_TimeBaseStruct;
+	TIM_OCInitTypeDef TIM_OCInitStruct;
 
-RCC_APB2PeriphClockCmd(RCC_APB2Periph_TIM10, ENABLE); //TIM10Ê±ÖÓ¿ªÆô
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_TIM10, ENABLE); // TIM10æ—¶é’Ÿå¼€å¯
 
-//TIM10µÄÊäÈëÆµÂÊÎªAPB2ÆµÂÊ168M£¬×îÖÕĞèÉú³É38KÔØ²¨
-//168M/38K = 4421
-TIM_TimeBaseStruct.TIM_Period = 4421; //38K
-TIM_TimeBaseStruct.TIM_Prescaler = 0;  //²»·ÖÆµ: 168MHz/4421¡Ö38kHz
-TIM_TimeBaseStruct.TIM_ClockDivision = TIM_CKD_DIV1;
-TIM_TimeBaseStruct.TIM_CounterMode = TIM_CounterMode_Up;
-TIM_TimeBaseInit(IR_SEND_TIM, &TIM_TimeBaseStruct);
+	// TIM10çš„è¾“å…¥é¢‘ç‡ä¸ºAPB2é¢‘ç‡168Mï¼Œæœ€ç»ˆéœ€ç”Ÿæˆ38Kè½½æ³¢
+	// 168M/38K = 4421
+	TIM_TimeBaseStruct.TIM_Period        = 4421; // 38K
+	TIM_TimeBaseStruct.TIM_Prescaler     = 0;    // ä¸åˆ†é¢‘: 168MHz/4421â‰ˆ38kHz
+	TIM_TimeBaseStruct.TIM_ClockDivision = TIM_CKD_DIV1;
+	TIM_TimeBaseStruct.TIM_CounterMode   = TIM_CounterMode_Up;
+	TIM_TimeBaseInit(IR_SEND_TIM, &TIM_TimeBaseStruct);
 
-//PWM Mode : CH1
-TIM_OCInitStruct.TIM_OCMode = TIM_OCMode_PWM1;
-TIM_OCInitStruct.TIM_OutputState = TIM_OutputState_Enable;
-TIM_OCInitStruct.TIM_Pulse = 2210; //Ìø±ä±È½ÏÖµ£¬¾ö¶¨Õ¼¿Õ±È£¬´Ë´¦Õ¼¿Õ±È²»Ó°Ïì£¬ÉèÎª1/2
-TIM_OCInitStruct.TIM_OCPolarity = TIM_OCPolarity_High;
-TIM_OC1Init(IR_SEND_TIM, &TIM_OCInitStruct);
+	// PWM Mode : CH1
+	TIM_OCInitStruct.TIM_OCMode      = TIM_OCMode_PWM1;
+	TIM_OCInitStruct.TIM_OutputState = TIM_OutputState_Enable;
+	TIM_OCInitStruct.TIM_Pulse       = 2210; // è·³å˜æ¯”è¾ƒå€¼ï¼Œå†³å®šå ç©ºæ¯”ï¼Œæ­¤å¤„è®¾ä¸º1/2
+	TIM_OCInitStruct.TIM_OCPolarity  = TIM_OCPolarity_High;
+	TIM_OC1Init(IR_SEND_TIM, &TIM_OCInitStruct);
 
-TIM_CCxCmd(IR_SEND_TIM, TIM_Channel_1, TIM_CCx_Enable);
-}
-
-
-void PwmEnable(void){
-TIM_ForcedOC1Config(IR_SEND_TIM, TIM_OCMode_PWM1);//±äÎªPWM1Ä£Ê½
-TIM_Cmd(IR_SEND_TIM, ENABLE);
-}
-
-void PwmDisable(void){
-TIM_ForcedOC1Config(IR_SEND_TIM, TIM_ForcedAction_InActive);//Ç¿ÖÆÊä³öÎªÎŞĞ§µÍµçÆ½
-TIM_Cmd(IR_SEND_TIM, DISABLE);
+	TIM_CCxCmd(IR_SEND_TIM, TIM_Channel_1, TIM_CCx_Enable);
 }
 
 
-static void IR_Send_Byte(uint8_t data){
-uint8_t i = 0;
-for(i=0; i<8; i++){
-PwmEnable();//¿ªÆôºìÍâÔØ²¨
-IR_SEND_DELAY_US( 560 );
-PwmDisable();//¹Ø±ÕºìÍâÔØ²¨
-if(data & 0x1){//Êı¾İÎ»1
-IR_SEND_DELAY_US(1680);//Êı¾İÎ»1Âö³åºóĞèÑÓÊ±560us*3 = 1680us
+void PwmEnable(void)
+{
+	TIM_ForcedOC1Config(IR_SEND_TIM, TIM_OCMode_PWM1); // å˜ä¸ºPWM1æ¨¡å¼
+	TIM_Cmd(IR_SEND_TIM, ENABLE);
 }
-else{//Êı¾İÎ»0
-IR_SEND_DELAY_US(560);//Êı¾İÎ»0Âö³åºóĞèÑÓÊ±560us£¬
-}
-data = data >> 1;
-}
+
+void PwmDisable(void)
+{
+	TIM_ForcedOC1Config(IR_SEND_TIM, TIM_ForcedAction_InActive); // å¼ºåˆ¶è¾“å‡ºä¸ºæ— æ•ˆä½ç”µå¹³
+	TIM_Cmd(IR_SEND_TIM, DISABLE);
 }
 
 
-void IR_Send(uint8_t addr, uint8_t code){
-//Òıµ¼Í·
-PwmEnable();
-IR_SEND_DELAY_US(9000);//9msÂö³å
-PwmDisable();
-IR_SEND_DELAY_US(4500);//Í£4.5ms
+static void IR_Send_Byte(uint8_t data)
+{
+	uint8_t i = 0;
+	for(i = 0; i < 8; i++)
+	{
+		PwmEnable();                     // å¼€å¯çº¢å¤–è½½æ³¢
+		IR_SEND_DELAY_US(560);
+		PwmDisable();                    // å…³é—­çº¢å¤–è½½æ³¢
+		if(data & 0x1)                   // æ•°æ®ä½1
+		{
+			IR_SEND_DELAY_US(1680);      // è„‰å†²åéœ€å»¶æ—¶560us*3 = 1680us
+		}
+		else                             // æ•°æ®ä½0
+		{
+			IR_SEND_DELAY_US(560);       // è„‰å†²åéœ€å»¶æ—¶560us
+		}
+		data = data >> 1;
+	}
+}
 
-	IR_Send_Byte(addr); //·¢ËÍµØÖ·
-	IR_Send_Byte(~addr); //·¢ËÍµØÖ··´Âë
-	IR_Send_Byte(code); //·¢ËÍ¼üÖµ
-	IR_Send_Byte(~code); //·¢ËÍ¼üÖµ·´Âë
 
-//Í£Ö¹Î»,±ØĞëÓĞ
-PwmEnable();
-IR_SEND_DELAY_US( 560 );
-PwmDisable();//¹Ø±ÕºìÍâÔØ²¨
+void IR_Send(uint8_t addr, uint8_t code)
+{
+	// å¼•å¯¼å¤´
+	PwmEnable();
+	IR_SEND_DELAY_US(9000); // 9msè„‰å†²
+	PwmDisable();
+	IR_SEND_DELAY_US(4500); // åœ4.5ms
+
+	IR_Send_Byte(addr);     // å‘é€åœ°å€
+	IR_Send_Byte(~addr);    // å‘é€åœ°å€åç 
+	IR_Send_Byte(code);     // å‘é€é”®å€¼
+	IR_Send_Byte(~code);    // å‘é€é”®å€¼åç 
+
+	// åœæ­¢ä½, å¿…é¡»æœ‰
+	PwmEnable();
+	IR_SEND_DELAY_US(560);
+	PwmDisable();            // å…³é—­çº¢å¤–è½½æ³¢
 }
