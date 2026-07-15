@@ -63,13 +63,14 @@ void menu_fingerprint(void)
     uint8_t ch;
     printf("\r\n=== Fingerprint ===\r\n");
     printf("1-Enroll  2-Match  0-Back\r\n");
+
+    /* LCD: show fingerprint mode immediately */
+    LCD_Clear(0, 0, LCD_GetLenX(), LCD_GetLenY());
+    lcd_title("Fingerprint");
+
     ch = uart_getch();
     printf("[%c]\r\n", ch);
     if(ch == '0') return;
-
-    /* LCD: show fingerprint mode */
-    LCD_Clear(0, 0, LCD_GetLenX(), LCD_GetLenY());
-    lcd_title("Fingerprint");
 
     FPR_Init(57600);
     if(ZN632_VryPwd() == 0)
