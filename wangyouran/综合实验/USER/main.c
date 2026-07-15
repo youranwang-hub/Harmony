@@ -90,47 +90,52 @@ void menu_fingerprint(void)
     delay_ms(1500);
 }
 
-/* Menu 2: GPS */
+/* Menu 2: GPS — get one fix then return */
 void menu_gps(void)
 {
-    uint8_t ch;
     char buf[32];
-    uint8_t lcd_dirty = 1;
+    uint32_t timeout;
 
     printf("\r\n=== GPS ===\r\n");
-    printf("Press any key (~35s cold start), q=back\r\n");
-    ch = uart_getch();
-    if(ch == 'q') return;
+    printf("Acquiring GPS fix (timeout 60s)...\r\n");
 
     GPS_Init(9600);
-    printf("Waiting GPS data...\r\n");
 
     LCD_Clear(0, 0, LCD_GetLenX(), LCD_GetLenY());
     lcd_title("GPS Tracking");
-    lcd_line(2, "Waiting fix...");
+    lcd_line(2, "Acquiring...");
 
-    while(1) {
+    /* wait for first valid fix, max 60 seconds (240 x 250ms) */
+    for(timeout = 0; timeout < 240; timeout++) {
         GPS_ReadAndParse();
-
-        /* update LCD when GPS has a fix */
-        if(gga.lat != 0.0 && lcd_dirty) {
-            LCD_Clear(0, 32, LCD_GetLenX(), LCD_GetLenY() - 32);
-            lcd_title("GPS Tracking");
-            sprintf(buf, "Lat:%.4f %c", gga.lat, gga.lat_dir);
-            lcd_line(2, buf);
-            sprintf(buf, "Lon:%.4f %c", gga.lon, gga.lon_dir);
-            lcd_line(3, buf);
-            sprintf(buf, "Sat:%d HDOP:%.1f", gga.sats, gga.hdop);
-            lcd_line(4, buf);
-            lcd_dirty = 0;
-        }
-
-        delay_ms(200);
-        if(USART_GetFlagStatus(USART2, USART_FLAG_RXNE)) {
-            ch = USART_ReceiveData(USART2);
-            if(ch == 'q' || ch == 'Q') break;
-        }
+        if(gga.lat != 0.0) break;       /* got a fix */
+        delay_ms(250);
     }
+
+    if(gga.lat == 0.0) {
+        printf("GPS: No fix (timeout)\r\n");
+        lcd_line(2, "No fix");
+        delay_ms(2000);
+        return;
+    }
+
+    /* print one clean fix */
+    printf("========================================\r\n");
+    printf("  GPS Fix\r\n");
+    printf("  Lat : %.4f %c\r\n", gga.lat, gga.lat_dir);
+    printf("  Lon : %.4f %c\r\n", gga.lon, gga.lon_dir);
+    printf("  Sats: %d   HDOP: %.1f\r\n", gga.sats, gga.hdop);
+    printf("  Alt : %.1f m\r\n", gga.alt);
+    printf("========================================\r\n");
+
+    /* update LCD */
+    LCD_Clear(0, 32, LCD_GetLenX(), LCD_GetLenY() - 32);
+    sprintf(buf, "Lat:%.4f %c", gga.lat, gga.lat_dir);
+    lcd_line(2, buf);
+    sprintf(buf, "Lon:%.4f %c", gga.lon, gga.lon_dir);
+    lcd_line(3, buf);
+    sprintf(buf, "Sat:%d Alt:%.0fm", gga.sats, gga.alt);
+    lcd_line(4, buf);
 }
 
 /* Menu 3: Environment Monitor (DHT11 + MQ2) */
