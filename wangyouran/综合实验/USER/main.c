@@ -57,38 +57,80 @@ char uart_getch(void)
 
 /* ===== Menu Functions ===== */
 
-/* Menu 1: Fingerprint */
+/* Touch-based auth: swipe right on touch screen to authenticate */
+int8_t touch_swipe_right(void)
+{
+    XPT2046_Coord touch;
+    int16_t start_x = -1, end_x = -1;
+    int16_t start_y = 0;
+    uint32_t timeout;
+
+    for(timeout = 0; timeout < 3000; timeout++) {
+        if(XPT2046_DetectTouch() == 1) {       /* TOUCH_PRESSED */
+            XPT2046_GetTouchPoint(&touch);
+            if(touch.x >= 0 && touch.y >= 0) {
+                if(start_x < 0) {
+                    start_x = touch.x;
+                    start_y = touch.y;
+                }
+                end_x = touch.x;
+            }
+        } else {
+            if(start_x >= 0 && end_x >= 0) break;  /* released */
+        }
+        delay_ms(10);
+    }
+
+    if(start_x < 0 || end_x < 0) return -1;         /* no touch */
+    if((end_x - start_x) > 100) return 1;            /* swiped right >100px */
+    return 0;                                         /* too short */
+}
+
+/* Menu 1: Fingerprint (with touch-swipe fallback) */
 void menu_fingerprint(void)
 {
     uint8_t ch;
-    printf("\r\n=== Fingerprint ===\r\n");
-    printf("1-Enroll  2-Match  0-Back\r\n");
+    printf("\r\n=== Auth ===\r\n");
+    printf("1-Fingerprint  2-TouchSwipe  0-Back\r\n");
 
-    /* LCD: show fingerprint mode immediately */
     LCD_Clear(0, 0, LCD_GetLenX(), LCD_GetLenY());
-    lcd_title("Fingerprint");
+    lcd_title("Auth");
+    lcd_line(2, "1-FPR 2-Swipe");
 
     ch = uart_getch();
     printf("[%c]\r\n", ch);
     if(ch == '0') return;
 
+    /* Option 2: touch screen swipe auth */
+    if(ch == '2') {
+        LCD_Clear(0, 0, LCD_GetLenX(), LCD_GetLenY());
+        lcd_title("Swipe Right ->");
+        lcd_line(2, "Swipe to login");
+        printf("Swipe right on touch screen to login...\r\n");
+
+        if(touch_swipe_right() == 1) {
+            printf("Touch Auth OK!\r\n");
+            lcd_title("Swipe Right ->");
+            lcd_line(3, "Auth OK!");
+            BUZZ_ON(); delay_ms(150); BUZZ_OFF();
+        } else {
+            printf("Touch Auth FAIL\r\n");
+            lcd_line(3, "Auth Fail");
+        }
+        delay_ms(1500);
+        return;
+    }
+
+    /* Option 1: fingerprint hardware */
     FPR_Init(57600);
-    if(ZN632_VryPwd() == 0)
-        printf("Password OK\r\n");
-    if(ZN632_ReadIndexTable() == 0)
-        printf("IndexTable OK\r\n");
+    if(ZN632_VryPwd() == 0) printf("Password OK\r\n");
+    if(ZN632_ReadIndexTable() == 0) printf("IndexTable OK\r\n");
 
     if(ch == '1') {
         lcd_line(2, "Enroll...");
         FPR_AddFinger();
         lcd_line(3, "OK");
     }
-    if(ch == '2') {
-        lcd_line(2, "Matching...");
-        FPR_MatchFinger();
-        lcd_line(3, "Done");
-    }
-    delay_ms(1500);
 }
 
 /* Menu 2: GPS — get one fix then return */
