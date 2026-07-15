@@ -390,6 +390,30 @@ void menu_can(void)
     lcd_line(3, "OK");
 }
 
+/* Menu 8: Set RTC Time via QCOM (one field at a time) */
+void menu_settime(void)
+{
+    int yy, mm, dd, hh, mi, ss;
+    RTC_TimeTypeDef RT;
+    RTC_DateTypeDef RD;
+
+    printf("\r\n=== Set Time ===\r\n");
+    printf("Year(00-99): ");  scanf("%d", &yy);
+    printf("Month(1-12): ");  scanf("%d", &mm);
+    printf("Day(1-31): ");    scanf("%d", &dd);
+    printf("Hour(0-23): ");   scanf("%d", &hh);
+    printf("Min(0-59): ");    scanf("%d", &mi);
+    printf("Sec(0-59): ");    scanf("%d", &ss);
+
+    printf("Set to: 20%02d-%02d-%02d %02d:%02d:%02d\r\n", yy, mm, dd, hh, mi, ss);
+
+    PWR_BackupAccessCmd(ENABLE);
+    RTC_SetTime(RTC_Format_BIN, &(RTC_TimeTypeDef){hh, mi, ss, 0, 0});
+    RTC_SetDate(RTC_Format_BIN, &(RTC_DateTypeDef){0, yy, mm, dd});
+
+    printf("Time set OK\r\n");
+}
+
 /* Show menu */
 void show_menu(void)
 {
@@ -403,6 +427,7 @@ void show_menu(void)
     printf("5 - IR Sign-off\r\n");
     printf("6 - FLASH Dump\r\n");
     printf("7 - CAN Test\r\n");
+    printf("8 - Set Time\r\n");
     printf("0 - Exit\r\n");
     printf("========================================\r\n");
     printf("Select: ");
@@ -468,6 +493,7 @@ int main(void)
             case '5': menu_ir();                break;
             case '6': menu_flash_dump();        break;
             case '7': menu_can();               break;
+            case '8': menu_settime();            break;
             case '0':
                 printf("System off.\r\n");
                 LCD_Clear(0, 0, LCD_GetLenX(), LCD_GetLenY());
