@@ -17,10 +17,6 @@
 #include "ir_recv.h"
 #include "can.h"
 
-/* GPS parsed data (defined in gps_parser.c) */
-extern GGA gga;
-extern RMC rmc;
-
 /* Thresholds */
 #define TEMP_LIMIT   25.0f
 #define HUMI_LIMIT   70.0f
@@ -32,29 +28,6 @@ extern RMC rmc;
 
 static char g_DriverName[20] = "Wang";
 
-/* LCD helpers */
-static void lcd_title(const char *s)
-{
-    LCD_Clear(0, 0, LCD_GetLenX(), 16);
-    LCD_SetColors(RED, BLACK);
-    LCD_DispStringEN(0, 0, 0, (char*)s);
-    LCD_SetColors(WHITE, BLACK);
-}
-
-static void lcd_line(uint8_t row, const char *s)
-{
-    LCD_DispStringEN(0, LINE_EN(row), 0, (char*)s);
-}
-
-/* Helper: getchar that waits TX done + skips leftover \r \n */
-char uart_getch(void)
-{
-    char c;
-    while(USART_GetFlagStatus(USART2, USART_FLAG_TC) == RESET);
-    do { c = getchar(); } while(c == '\r' || c == '\n');
-    return c;
-}
-
 /* ===== Menu Functions ===== */
 
 /* Menu 1: Fingerprint */
@@ -63,71 +36,35 @@ void menu_fingerprint(void)
     uint8_t ch;
     printf("\r\n=== Fingerprint ===\r\n");
     printf("1-Enroll  2-Match  0-Back\r\n");
-    ch = uart_getch();
+    ch = getchar();
     if(ch == '0') return;
 
-    /* LCD: show fingerprint mode */
-    LCD_Clear(0, 0, LCD_GetLenX(), LCD_GetLenY());
-    lcd_title("Fingerprint");
-
-    FPR_Init(57600);
+    FPR_Init(57600);                /* switch UART4 to FPR */
     if(ZN632_VryPwd() == 0)
         printf("Password OK\r\n");
     if(ZN632_ReadIndexTable() == 0)
         printf("IndexTable OK\r\n");
 
-    if(ch == '1') {
-        lcd_line(2, "Enroll...");
-        FPR_AddFinger();
-        lcd_line(3, "OK");
-    }
-    if(ch == '2') {
-        lcd_line(2, "Matching...");
-        FPR_MatchFinger();
-        lcd_line(3, "Done");
-    }
-    delay_ms(1500);
+    if(ch == '1') FPR_AddFinger();
+    if(ch == '2') FPR_MatchFinger();
 }
 
 /* Menu 2: GPS */
 void menu_gps(void)
 {
     uint8_t ch;
-    char buf[32];
-    uint8_t lcd_dirty = 1;
-
     printf("\r\n=== GPS ===\r\n");
     printf("Press any key (~35s cold start), q=back\r\n");
-    ch = uart_getch();
+    ch = getchar();
     if(ch == 'q') return;
 
-    GPS_Init(9600);
+    GPS_Init(9600);                 /* switch UART4 to GPS */
     printf("Waiting GPS data...\r\n");
-
-    LCD_Clear(0, 0, LCD_GetLenX(), LCD_GetLenY());
-    lcd_title("GPS Tracking");
-    lcd_line(2, "Waiting fix...");
-
     while(1) {
         GPS_ReadAndParse();
-
-        /* update LCD when GPS has a fix */
-        if(gga.lat != 0.0 && lcd_dirty) {
-            LCD_Clear(0, 32, LCD_GetLenX(), LCD_GetLenY() - 32);
-            lcd_title("GPS Tracking");
-            sprintf(buf, "Lat:%.4f %c", gga.lat, gga.lat_dir);
-            lcd_line(2, buf);
-            sprintf(buf, "Lon:%.4f %c", gga.lon, gga.lon_dir);
-            lcd_line(3, buf);
-            sprintf(buf, "Sat:%d HDOP:%.1f", gga.sats, gga.hdop);
-            lcd_line(4, buf);
-            lcd_dirty = 0;
-        }
-
-        delay_ms(200);
         if(USART_GetFlagStatus(USART2, USART_FLAG_RXNE)) {
             ch = USART_ReceiveData(USART2);
-            if(ch == 'q' || ch == 'Q') break;
+            if(ch == 'q') break;
         }
     }
 }
@@ -138,14 +75,10 @@ void menu_env(void)
     DHT11_Data dht;
     uint16_t mq_val;
     RTC_TimeTypeDef RTC_T;
-    char buf[32];
 
     printf("\r\n=== Env Monitor (any key to exit) ===\r\n");
-
-    LCD_Clear(0, 0, LCD_GetLenX(), LCD_GetLenY());
-    lcd_title("Env Monitor");
-
     while(1) {
+        /* DHT11 */
         if(DHT11_ReadData(&dht) == 0) {
             printf("T:%d.%dC H:%d.%d%% ",
                 dht.temp_int, dht.temp_deci,
@@ -154,43 +87,42 @@ void menu_env(void)
             if(dht.temp_int > TEMP_LIMIT || dht.humi_int > HUMI_LIMIT) {
                 printf("<<<ALERT!>>>");
                 LED1_ON(); BUZZ_ON();
-                lcd_line(2, "ALERT! HIGH T/H");
             } else {
                 LED1_OFF(); BUZZ_OFF();
-                LCD_Clear(0, 32, LCD_GetLenX(), LCD_GetLenY() - 32);
             }
-
-            sprintf(buf, "T:%dC H:%d%% ", dht.temp_int, dht.humi_int);
-            lcd_line(3, buf);
         }
 
+        /* MQ2 */
         mq_val = MQ_ReadValue();
         printf("MQ2:%u\r\n", mq_val);
-        sprintf(buf, "MQ2:%-4u", mq_val);
-        lcd_line(4, buf);
-
         if(mq_val > MQ2_LIMIT) {
             printf("MQ2 ALARM!\r\n");
             LED2_ON(); BUZZ_ON();
-            lcd_line(5, "MQ2 ALARM!");
         } else {
             LED2_OFF();
             if(dht.temp_int <= TEMP_LIMIT) BUZZ_OFF();
         }
 
+        /* LCD refresh */
         RTC_GetTime(RTC_Format_BIN, &RTC_T);
-        sprintf(buf, "%02d:%02d:%02d",
-            RTC_T.RTC_Hours, RTC_T.RTC_Minutes, RTC_T.RTC_Seconds);
-        lcd_line(6, buf);
+        LCD_Clear(0, 32, LCD_GetLenX(), LCD_GetLenY() - 32);
+        LCD_SetTextColor(WHITE);
+        {
+            char buf[32];
+            sprintf(buf, "T:%dC H:%d%% ", dht.temp_int, dht.humi_int);
+            LCD_DispStringEN(0, 32, 0, buf);
+            sprintf(buf, "MQ2:%-4u", mq_val);
+            LCD_DispStringEN(0, 48, 0, buf);
+        }
 
         delay_ms(1000);
         if(USART_GetFlagStatus(USART2, USART_FLAG_RXNE)) break;
     }
     LED1_OFF(); LED2_OFF(); BUZZ_OFF();
-    uart_getch();
+    getchar();
 }
 
-/* Menu 4: LCD Refresh */
+/* Menu 4: LCD Display */
 void menu_lcd(void)
 {
     RTC_TimeTypeDef RTC_T;
@@ -204,12 +136,15 @@ void menu_lcd(void)
     LCD_Clear(0, 0, LCD_GetLenX(), LCD_GetLenY());
     LCD_SetFontEN(&ASCII_8x16);
 
+    /* Title */
     LCD_SetColors(RED, BLACK);
     LCD_DispStringEN(0, 0, 0, "SmartLogi V1.0");
 
+    /* Driver name */
     LCD_SetColors(WHITE, BLACK);
     LCD_DispStringEN(0, LINE_EN(1), 0, g_DriverName);
 
+    /* Time & date */
     {
         char buf[32];
         sprintf(buf, "%02d:%02d:%02d",
@@ -229,16 +164,12 @@ void menu_ir(void)
     printf("\r\n=== IR Sign-off ===\r\n");
     printf("Press remote key to sign...\r\n");
 
-    LCD_Clear(0, 0, LCD_GetLenX(), LCD_GetLenY());
-    lcd_title("IR Sign-off");
-    lcd_line(2, "Press remote...");
-
     IR_Recv_Init();
     while(1) {
         IR_Recv();
         delay_ms(50);
         if(USART_GetFlagStatus(USART2, USART_FLAG_RXNE)) {
-            uart_getch(); break;
+            getchar(); break;
         }
     }
 }
@@ -252,15 +183,11 @@ void IR_Rece_Proc(uint16_t addr, uint8_t code)
     static uint32_t flash_offset = 0;
 
     printf("IR: addr=0x%04X code=0x%02X --> Sign OK!\r\n", addr, code);
-
-    /* LCD: show sign-off confirmation */
-    lcd_title("IR Sign-off");
-    lcd_line(2, "Sign OK!");
-
     BUZZ_ON(); LED3_ON();
     delay_ms(200);
     BUZZ_OFF(); LED3_OFF();
 
+    /* Write to FLASH */
     RTC_GetTime(RTC_Format_BIN, &RTC_T);
     RTC_GetDate(RTC_Format_BIN, &RTC_D);
     sprintf(log, "SIGN:20%02d-%02d-%02d %02d:%02d:%02d Key:%02X\r\n",
@@ -281,17 +208,10 @@ void menu_flash_dump(void)
 {
     uint8_t buf[256];
     printf("\r\n=== FLASH Dump ===\r\n");
-
-    LCD_Clear(0, 0, LCD_GetLenX(), LCD_GetLenY());
-    lcd_title("FLASH Dump");
-    lcd_line(2, "Reading...");
-
     W25QXX_BufferRead(buf, 0, sizeof(buf));
     buf[255] = '\0';
     printf("%s\r\n", buf);
     printf("=== Dump Done ===\r\n");
-
-    lcd_line(3, "Done");
 }
 
 /* Menu 7: CAN Test */
@@ -299,17 +219,10 @@ void menu_can(void)
 {
     uint8_t data[8] = {0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11};
     printf("\r\n=== CAN LoopBack Test ===\r\n");
-
-    LCD_Clear(0, 0, LCD_GetLenX(), LCD_GetLenY());
-    lcd_title("CAN Test");
-    lcd_line(2, "LoopBack...");
-
     CAN1_Init();
     CAN1_SendMsg(0x1234, data, 8);
     delay_ms(100);
     printf("CAN test done\r\n");
-
-    lcd_line(3, "OK");
 }
 
 /* Show menu */
@@ -337,25 +250,32 @@ int main(void)
     RTC_TimeTypeDef RTC_T;
     RTC_DateTypeDef RTC_D;
 
+    /* ---- System Init ---- */
     delay_ms(100);
     UART2_Init(115200);
     LED_BUZZ_Init();
 
+    /* Storage */
     AT24C02_Init();
     W25QXX_Init();
+
+    /* RTC */
     BSP_RTC_Init();
 
+    /* Read driver name from E2PROM, write default if empty */
     AT24C02_BufferRead((uint8_t*)g_DriverName, EE_ADDR_NAME, 16);
     if(g_DriverName[0] == 0xFF || g_DriverName[0] == 0) {
         strcpy(g_DriverName, "Wang");
         AT24C02_BufferWrite((uint8_t*)g_DriverName, EE_ADDR_NAME, 16);
     }
 
+    /* LCD + Touch */
     LCD_Init();
     LCD_SetFontEN(&ASCII_8x16);
     LCD_SetColors(WHITE, BLACK);
     LCD_Clear(0, 0, LCD_GetLenX(), LCD_GetLenY());
 
+    /* Splash screen */
     LCD_SetColors(RED, BLACK);
     LCD_DispStringEN(0, 0, 0, "SmartLogi V1.0");
     LCD_SetColors(WHITE, BLACK);
@@ -371,15 +291,17 @@ int main(void)
         LCD_DispStringEN(0, LINE_EN(2), 0, buf);
     }
 
+    /* Sensors */
     DHT11_Init();
     MQ_Init();
     XPT2046_Init();
 
     printf("\r\n=== SmartLogi System Ready ===\r\n");
 
+    /* ---- Main Loop ---- */
     while(1) {
         show_menu();
-        ch = uart_getch();
+        ch = getchar();
         printf("%c\r\n", ch);
 
         switch(ch) {
