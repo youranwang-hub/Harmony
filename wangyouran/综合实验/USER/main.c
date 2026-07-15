@@ -22,8 +22,8 @@ extern GGA gga;
 extern RMC rmc;
 
 /* Thresholds */
-#define TEMP_LIMIT   25.0f
-#define HUMI_LIMIT   70.0f
+#define TEMP_LIMIT   28
+#define HUMI_LIMIT   50
 #define MQ2_LIMIT    2000
 
 /* E2PROM / FLASH addresses */
@@ -46,12 +46,24 @@ static void lcd_line(uint8_t row, const char *s)
     LCD_DispStringEN(0, LINE_EN(row), 0, (char*)s);
 }
 
-/* Helper: getchar that skips leftover \r \n from QCOM line-send */
+/* Helper: read one char from USART2, skip \r \n, robust to error flags */
 char uart_getch(void)
 {
     char c;
-    delay_ms(5);  /* let printf finish */
-    do { c = getchar(); } while(c == '\r' || c == '\n');
+    delay_ms(20);  /* let any pending printf finish */
+
+    /* clear any leftover bytes and error flags */
+    while(USART_GetFlagStatus(USART2, USART_FLAG_RXNE) != RESET)
+        USART_ReceiveData(USART2);
+    if(USART_GetFlagStatus(USART2, USART_FLAG_ORE) != RESET)
+        USART_ReceiveData(USART2);  /* read DR to clear ORE */
+    if(USART_GetFlagStatus(USART2, USART_FLAG_FE) != RESET)
+        USART_ReceiveData(USART2);
+
+    do {
+        while(USART_GetFlagStatus(USART2, USART_FLAG_RXNE) == RESET);  /* wait */
+        c = (char)USART_ReceiveData(USART2);
+    } while(c == '\r' || c == '\n');
     return c;
 }
 
@@ -140,19 +152,26 @@ void menu_gps(void)
     uint32_t timeout;
 
     printf("\r\n=== GPS ===\r\n");
-    printf("Acquiring GPS fix (timeout 60s)...\r\n");
+    printf("Acquiring GPS fix (timeout 30s, any key=abort)...\r\n");
 
     GPS_Init(9600);
 
     LCD_Clear(0, 0, LCD_GetLenX(), LCD_GetLenY());
     lcd_title("GPS Tracking");
     lcd_line(2, "Acquiring...");
+    lcd_line(4, "Any key=abort");
 
-    /* wait for first valid fix, max 60 seconds (240 x 250ms) */
-    for(timeout = 0; timeout < 240; timeout++) {
+    /* wait for first valid fix, max 30 seconds (120 x 250ms) */
+    for(timeout = 0; timeout < 120; timeout++) {
         GPS_ReadAndParse();
-        if(gga.lat != 0.0) break;       /* got a fix */
+        if(gga.lat != 0.0) break;
         delay_ms(250);
+        /* any key to abort */
+        if(USART_GetFlagStatus(USART2, USART_FLAG_RXNE)) {
+            USART_ReceiveData(USART2);
+            printf("GPS aborted\r\n");
+            return;
+        }
     }
 
     if(gga.lat == 0.0) {
@@ -179,6 +198,13 @@ void menu_gps(void)
     lcd_line(3, buf);
     sprintf(buf, "Sat:%d Alt:%.0fm", gga.sats, gga.alt);
     lcd_line(4, buf);
+
+    /* wait TX done + flush RX + disable UART4 interrupt */
+    delay_ms(300);
+    while(USART_GetFlagStatus(USART2, USART_FLAG_RXNE) != RESET)
+        USART_ReceiveData(USART2);
+    USART_ITConfig(UART4, USART_IT_RXNE, DISABLE);
+    USART_ITConfig(UART4, USART_IT_IDLE, DISABLE);
 }
 
 /* Menu 3: Environment Monitor (DHT11 + MQ2) */
@@ -195,6 +221,8 @@ void menu_env(void)
     lcd_title("Env Monitor");
 
     while(1) {
+        uint8_t alert = 0;
+
         if(DHT11_ReadData(&dht) == 0) {
             printf("T:%d.%dC H:%d.%d%% ",
                 dht.temp_int, dht.temp_deci,
@@ -202,13 +230,12 @@ void menu_env(void)
 
             if(dht.temp_int > TEMP_LIMIT || dht.humi_int > HUMI_LIMIT) {
                 printf("<<<ALERT!>>>");
-                LED1_ON(); BUZZ_ON();
+                LED1_ON(); alert = 1;
                 lcd_line(2, "ALERT! HIGH T/H");
             } else {
-                LED1_OFF(); BUZZ_OFF();
+                LED1_OFF();
                 LCD_Clear(0, 32, LCD_GetLenX(), LCD_GetLenY() - 32);
             }
-
             sprintf(buf, "T:%dC H:%d%% ", dht.temp_int, dht.humi_int);
             lcd_line(3, buf);
         }
@@ -220,12 +247,14 @@ void menu_env(void)
 
         if(mq_val > MQ2_LIMIT) {
             printf("MQ2 ALARM!\r\n");
-            LED2_ON(); BUZZ_ON();
+            LED2_ON(); alert = 1;
             lcd_line(5, "MQ2 ALARM!");
         } else {
             LED2_OFF();
-            if(dht.temp_int <= TEMP_LIMIT) BUZZ_OFF();
         }
+
+        /* unified buzzer: ON if any alert, OFF otherwise */
+        if(alert) BUZZ_ON(); else BUZZ_OFF();
 
         RTC_GetTime(RTC_Format_BIN, &RTC_T);
         sprintf(buf, "%02d:%02d:%02d",
