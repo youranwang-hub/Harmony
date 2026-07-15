@@ -46,11 +46,11 @@ static void lcd_line(uint8_t row, const char *s)
     LCD_DispStringEN(0, LINE_EN(row), 0, (char*)s);
 }
 
-/* Helper: getchar that waits TX done + skips leftover \r \n */
+/* Helper: getchar that skips leftover \r \n from QCOM line-send */
 char uart_getch(void)
 {
     char c;
-    while(USART_GetFlagStatus(USART2, USART_FLAG_TC) == RESET);
+    delay_ms(5);  /* let printf finish */
     do { c = getchar(); } while(c == '\r' || c == '\n');
     return c;
 }
@@ -64,6 +64,7 @@ void menu_fingerprint(void)
     printf("\r\n=== Fingerprint ===\r\n");
     printf("1-Enroll  2-Match  0-Back\r\n");
     ch = uart_getch();
+    printf("[%c]\r\n", ch);
     if(ch == '0') return;
 
     /* LCD: show fingerprint mode */
