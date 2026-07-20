@@ -1,116 +1,152 @@
-# 实验6 SPI 与 FLASH 实验
+# 外围实验6 SPI 与 FLASH
 
-本实验使用 STM32F407 的 SPI1 接口访问 W25Q64 串行 FLASH，完成 JEDEC ID 读取、扇区擦除、256 字节数据写入、读回和校验。
+## 1. 实验目标
 
-## 代码结构
+本实验属于 **SPI Flash 存储实验**，当前版本为 **基础/拓展**。实验围绕 STM32F407 标准外设库展开，重点训练单个模块从初始化、运行到结果验证的完整流程。
 
-```text
-代码/
-├── BSP/
-│   ├── flash_w25qxx.c / flash_w25qxx.h    # W25Q64 SPI FLASH 驱动
-│   └── usart.c / usart.h                  # USART2 调试串口
-├── USER/
-│   └── main.c                             # 主程序和读写校验逻辑
-└── UTILS/
-    ├── delay.c / delay.h
-    └── utils.c / utils.h
-```
+- 掌握 SPI 通信和片选控制。
+- 读取 W25Qxx 设备 ID。
+- 完成 Flash 擦除、写入和读回校验。
 
-## 硬件与外设
+## 2. 实验环境
 
-| 功能 | 外设/引脚 | 说明 |
-| --- | --- | --- |
-| SPI SCK | PA5 / SPI1_SCK | SPI 时钟 |
-| SPI MISO | PA6 / SPI1_MISO | 主机输入 |
-| SPI MOSI | PA7 / SPI1_MOSI | 主机输出 |
-| FLASH CS | PC0 | 软件片选，低电平选中 |
-| FLASH | W25Q64 | JEDEC ID 期望值 `0xEF4017` |
-| 调试串口 | USART2，PA2/PA3 | 115200，8N1 |
+| 项目 | 内容 |
+|---|---|
+| 主控芯片 | STM32F407VE |
+| 开发板 | 青软 QST-AU100 综合实验开发板 |
+| 开发工具 | MDK 5.25 / Keil uVision5 |
+| 固件库 | STM32F4xx_DSP_StdPeriph_Lib_V1.4.0 标准外设库 |
+| 下载调试 | CMSIS-DAP，SWD 接口 |
+| 调试方式 | 串口助手、LED/蜂鸣器现象、OLED/LCD 显示或模块反馈 |
 
-## 主要实现
+## 3. 硬件资源与连接
 
-### SPI 初始化
+| 模块/资源 | 接口或控制方式 | 在本实验中的作用 |
+|---|---|---|
+| W25Qxx | SPI | 保存数据 |
+| USART | 调试 | 输出 ID 和校验结果 |
 
-`W25QXX_Init()` 完成 SPI FLASH 初始化：
+> 具体引脚以本实验源码中的宏定义和 QST-AU100 开发板丝印为准。如果实验现象与 README 描述不一致，优先检查源码中的端口、引脚和跳线设置。
 
-1. 使能 GPIOA、GPIOC 和 SPI1 时钟。
-2. 将 PA5、PA6、PA7 配置为 SPI1 复用功能。
-3. 将 PC0 配置为普通 GPIO 输出，用作片选 CS。
-4. 默认拉高 CS，结束通信状态。
-5. 配置 SPI1 为双线全双工、主机模式、8 位数据、MSB 先行。
-6. 使用 CPOL 高、CPHA 第二边沿的 SPI 模式 3。
-7. 软件管理 NSS，波特率预分频为 2。
-8. 使能 SPI1。
+## 4. 工程结构
 
-### 底层收发
-
-`W25QXX_SendByte()` 是 SPI 读写基础函数：
-
-- 等待 TXE 置位后发送 1 字节。
-- 等待 RXNE 置位后读取 1 字节。
-- SPI 为全双工，因此发送命令或 dummy byte 的同时也会收到数据。
-
-`W25QXX_ReadByte()` 通过发送 `0xFF` dummy byte 读取一个字节。
-
-### FLASH 命令
-
-驱动实现了以下关键操作：
-
-| 函数 | 功能 |
-| --- | --- |
-| `W25QXX_ReadID()` | 发送 `0x9F` 读取 JEDEC ID |
-| `W25QXX_WriteEnable()` | 发送 `0x06` 写使能 |
-| `W25QXX_WaitForWriteEnd()` | 读取状态寄存器，等待 WIP 位清零 |
-| `W25QXX_SectorErase()` | 发送 `0x20` 擦除指定扇区 |
-| `W25QXX_PageWrite()` | 发送 `0x02` 页编程 |
-| `W25QXX_BufferWrite()` | 处理页边界，批量写入 |
-| `W25QXX_BufferRead()` | 发送 `0x03` 连续读取数据 |
-
-## 主程序流程
-
-`USER/main.c` 的流程：
-
-1. 初始化 USART2，波特率 115200。
-2. 调用 `W25QXX_Init()` 初始化 SPI FLASH。
-3. 调用 `W25QXX_ReadID()` 读取 JEDEC ID。
-4. 擦除地址 0 所在扇区。
-5. 生成 0x00 到 0xFF 的 256 字节测试数据。
-6. 调用 `W25QXX_BufferWrite(BufWrite, 0, 256)` 写入地址 0。
-7. 调用 `W25QXX_BufferRead(BufRead, 0, 256)` 读回数据。
-8. 逐字节比较读写缓冲区。
-9. 全部一致时输出 `TEST OK`。
-
-## 运行现象
-
-串口输出流程大致为：
+本 README 所在目录：
 
 ```text
-W25QXX Init OK
-ReadID:[EF4017]
-SectorErase OK
-DATA Writing:
-0x00 0x01 ... 0xFF
-DATA Write OK:
-DATA Reading:
-0x00 0x01 ... 0xFF
-TEST OK
-DATA Read OK:
+D:\Github\Harmony\zhangjiayuan\（ARM外围传感器实验）实验6_SPI与FLASH实验
 ```
 
-如果 `ReadID` 为 0 或不是预期值，应优先检查 SPI 引脚、CS 片选、供电和 SPI 模式。
+主要代码文件如下：
 
-## 使用方法
+| 项目 | 内容 |
+|---|---|
+| `代码/BSP/flash_w25qxx.c` | 模块实现文件 |
+| `代码/BSP/flash_w25qxx.h` | 头文件/接口声明 |
+| `代码/BSP/usart.c` | 模块实现文件 |
+| `代码/BSP/usart.h` | 头文件/接口声明 |
+| `代码/USER/main.c` | 主程序入口 |
+| `代码/UTILS/delay.c` | 模块实现文件 |
+| `代码/UTILS/delay.h` | 头文件/接口声明 |
+| `代码/UTILS/utils.c` | 模块实现文件 |
+| `代码/UTILS/utils.h` | 头文件/接口声明 |
 
-1. 将 `代码/BSP`、`代码/USER`、`代码/UTILS` 加入 STM32F407 标准外设库工程。
-2. 确认 PA5、PA6、PA7、PC0 与 W25Q64 连接正确。
-3. 编译下载到开发板。
-4. 打开串口调试助手，设置 115200、8N1。
-5. 观察 ID、擦除、写入、读取和校验输出。
+## 5. 关键代码实现
 
-## 注意事项
+### 5.1 主程序组织
 
-- W25Q64 写入或擦除前必须先执行写使能命令。
-- 擦除和写入后必须等待 WIP 位清零，否则后续读取可能得到旧数据或不稳定数据。
-- 页编程最大 256 字节，跨页写入需要拆分，`W25QXX_BufferWrite()` 已处理页边界。
-- CS 需要在一条完整命令开始前拉低，在命令结束后拉高。
+大多数实验采用“初始化 + 主循环”的结构。初始化阶段完成时钟、GPIO、串口、传感器或显示模块配置；主循环中不断执行采集、判断、显示或通信任务。
 
+```c
+int main(void)
+{
+    /* 1. 初始化系统时钟、延时、串口和本实验外设 */
+    /* 2. 进入主循环，采集输入或刷新输出 */
+    while (1)
+    {
+        /* 根据实验目标执行控制、采集、通信或显示任务 */
+    }
+}
+```
+
+### 5.2 关键函数
+
+| 项目 | 内容 |
+|---|---|
+| `W25QXX_Init()` | 位于 `代码/BSP/flash_w25qxx.c`，用于初始化、数据处理或功能控制 |
+| `W25QXX_ReadByte()` | 位于 `代码/BSP/flash_w25qxx.c`，用于初始化、数据处理或功能控制 |
+| `W25QXX_SendByte()` | 位于 `代码/BSP/flash_w25qxx.c`，用于初始化、数据处理或功能控制 |
+| `W25QXX_ReadID()` | 位于 `代码/BSP/flash_w25qxx.c`，用于初始化、数据处理或功能控制 |
+| `W25QXX_WriteEnable()` | 位于 `代码/BSP/flash_w25qxx.c`，用于初始化、数据处理或功能控制 |
+| `W25QXX_WaitForWriteEnd()` | 位于 `代码/BSP/flash_w25qxx.c`，用于初始化、数据处理或功能控制 |
+| `W25QXX_SectorErase()` | 位于 `代码/BSP/flash_w25qxx.c`，用于初始化、数据处理或功能控制 |
+| `W25QXX_PageWrite()` | 位于 `代码/BSP/flash_w25qxx.c`，用于初始化、数据处理或功能控制 |
+| `W25QXX_BufferWrite()` | 位于 `代码/BSP/flash_w25qxx.c`，用于初始化、数据处理或功能控制 |
+| `W25QXX_BufferRead()` | 位于 `代码/BSP/flash_w25qxx.c`，用于初始化、数据处理或功能控制 |
+| `UART2_Init()` | 位于 `代码/BSP/usart.c`，用于初始化、数据处理或功能控制 |
+| `UART_SendByte()` | 位于 `代码/BSP/usart.c`，用于初始化、数据处理或功能控制 |
+| `UART_SendString()` | 位于 `代码/BSP/usart.c`，用于初始化、数据处理或功能控制 |
+| `UART_SendHalfWord()` | 位于 `代码/BSP/usart.c`，用于初始化、数据处理或功能控制 |
+| `fputc()` | 位于 `代码/BSP/usart.c`，用于初始化、数据处理或功能控制 |
+| `fgetc()` | 位于 `代码/BSP/usart.c`，用于初始化、数据处理或功能控制 |
+
+### 5.3 实现要点
+
+- 初始化 SPI 和片选引脚。
+- 读取 JEDEC ID 或设备 ID。
+- 写入前擦除扇区。
+- 页写入后读回比较。
+
+## 6. 程序流程图
+
+```mermaid
+flowchart TD
+    N0["初始化 SPI"]
+    N1["读取 Flash ID"]
+    N2["擦除目标区域"]
+    N3["写入数据"]
+    N4["读回校验"]
+    N5["输出结果"]
+    N0 --> N1
+    N1 --> N2
+    N2 --> N3
+    N3 --> N4
+    N4 --> N5
+```
+
+## 7. 运行步骤
+
+1. 使用 Keil uVision5 打开本实验目录中的工程文件。
+2. 确认芯片型号为 STM32F407VE，并使用 STM32F4 标准外设库。
+3. 检查 CMSIS-DAP 下载器连接，Debug 接口选择 SWD。
+4. 编译工程，确认没有阻止下载的 error。
+5. 下载到 QST-AU100 开发板并按复位键运行。
+6. 根据实验类型观察 LED、蜂鸣器、串口、OLED/LCD 或外接模块反馈。
+
+## 8. 实验现象与结果判断
+
+| 验证项目 | 预期现象 | 判断依据 |
+|---|---|---|
+| 运行现象 1 | 串口显示 Flash ID，写入和读回数据一致。 | 现象稳定出现，说明对应初始化和控制逻辑有效 |
+
+若使用串口观察，建议串口助手参数与源码保持一致；若使用显示屏观察，优先确认显示模块基础初始化正常。
+
+## 9. 基础版与拓展版差异
+
+拓展内容可增加多页写入、字符串保存或历史记录模拟。
+
+## 10. 常见问题与调试建议
+
+| 问题 | 可能原因与处理方法 |
+|---|---|
+| 读取 ID 错误 | 检查 SPI 模式、片选和 MISO/MOSI。 |
+| 写入失败 | 确认写使能和擦除流程。 |
+| 下载成功但无现象 | 先确认程序是否进入 `main()`，再用 LED 最小程序判断板子和下载配置是否正常。 |
+| 编译报头文件找不到 | 检查 Keil Include Path 是否包含 `USER`、`BSP`、`UTILS`、`CORE`、`FWLIB/inc` 等目录。 |
+| 现象与预期相反 | 检查 LED、蜂鸣器、按键或模块信号是否为低电平有效。 |
+
+## 11. 复现实验时的记录建议
+
+- 保存编译输出截图，确认 error 为 0。
+- 保存关键代码截图，尤其是初始化函数和主循环逻辑。
+- 保存硬件运行照片或串口输出，作为实验现象依据。
+- 如果进行了拓展功能，记录相对基础版修改了哪些文件和函数。
